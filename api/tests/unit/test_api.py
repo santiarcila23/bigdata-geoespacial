@@ -3,6 +3,8 @@ from datetime import datetime
 
 import pytest
 
+from pymongo.errors import OperationFailure
+
 from app import create_app
 
 POINT = {"type": "Point", "coordinates": [-87.63, 41.88]}
@@ -114,3 +116,14 @@ def test_spark_grid_and_temporal(client):
 
 def test_stats_meta_missing(client):
     assert client.get("/api/stats/meta").status_code == 404
+
+
+def test_self_intersecting_polygon_returns_400(client, db):
+    def boom(*_a, **_k):
+        raise OperationFailure("Loop is not valid: Edges 0 and 2 cross", code=2,
+                               details={"errmsg": "Loop is not valid: Edges 0 and 2 cross"})
+    db["crimes"].find = boom
+    bowtie = {"type": "Polygon", "coordinates": [[[-87.7, 41.8], [-87.6, 41.9],
+                                                  [-87.6, 41.8], [-87.7, 41.9], [-87.7, 41.8]]]}
+    r = client.post("/api/crimes/within", json=bowtie)
+    assert r.status_code == 400 and "se cruzan" in r.json["error"]

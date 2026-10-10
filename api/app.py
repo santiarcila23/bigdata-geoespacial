@@ -19,6 +19,7 @@ import time
 
 from flask import Flask, jsonify, request, send_from_directory
 from pymongo import MongoClient
+from pymongo.errors import OperationFailure
 
 import queries as q
 
@@ -40,6 +41,14 @@ def create_app(db=None) -> Flask:
     @app.errorhandler(q.ValidationError)
     def bad_request(err):
         return jsonify(error=str(err)), 400
+
+    @app.errorhandler(OperationFailure)
+    def mongo_rejected(err):
+        msg = str(getattr(err, "details", {}) and err.details.get("errmsg", err)) or str(err)
+        if "Loop is not valid" in msg or "Edges" in msg or "Duplicate vertices" in msg:
+            return jsonify(error="El polígono no es válido: sus lados se cruzan o tiene vértices repetidos. "
+                                 "Dibuje los vértices en orden alrededor del área, sin cruzar líneas."), 400
+        return jsonify(error=f"MongoDB rechazó la consulta: {msg}"), 400
 
     @app.errorhandler(404)
     def not_found(_):
