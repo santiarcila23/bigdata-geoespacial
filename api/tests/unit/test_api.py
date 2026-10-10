@@ -127,3 +127,9 @@ def test_self_intersecting_polygon_returns_400(client, db):
                                                   [-87.6, 41.8], [-87.7, 41.9], [-87.7, 41.8]]]}
     r = client.post("/api/crimes/within", json=bowtie)
     assert r.status_code == 400 and "se cruzan" in r.json["error"]
+
+
+def test_count_endpoint(client):
+    r = client.get("/api/crimes/count?lat=41.88&lon=-87.63&radius=500")
+    assert r.status_code == 200 and r.json["count"] == 5
+    assert client.get("/api/crimes/count?lat=200&lon=-87.63").status_code == 400

@@ -134,6 +134,15 @@ def create_app(db=None) -> Flask:
                        group_by=group_by, total=sum(g["count"] for g in groups), groups=groups)
 
     # ------------------------------------------------------------------ resultados de Spark
+    @app.get("/api/crimes/count")
+    def count_near():
+        """Cuántos registros hay a menos de `radius` metros de (lat, lon)."""
+        lon, lat = q.parse_point(request.args)
+        radius = q.parse_radius(request.args)
+        filters = q.parse_filters(request.args)
+        query = {"location": {"$geoWithin": {"$centerSphere": [[lon, lat], radius / 6378100]}}, **filters}
+        return jsonify(lat=lat, lon=lon, radius_m=radius, count=crimes.count_documents(query))
+
     @app.get("/api/stats/grid")
     def stats_grid():
         min_count = q.parse_int(request.args, "min_count", 0, 10**9, 1)
