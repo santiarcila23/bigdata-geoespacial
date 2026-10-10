@@ -230,7 +230,7 @@ docker compose run --rm --no-deps -e API_URL=http://api:5000 api pytest tests/sm
 ├── api/                      API Flask, mapa Leaflet y pruebas (unit + smoke)
 ├── jenkins/                  imagen de Jenkins, plugins y configuración como código
 ├── benchmark/                script del benchmark y resultados
-└── docs/informe.md           informe técnico
+└── docs/Informe_Big_Data_Geoespacial.pdf   informe técnico final
 ```
 
 ## Problemas frecuentes
