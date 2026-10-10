@@ -28,7 +28,7 @@ flowchart LR
 
 | Servicio | Imagen | Puerto | Función |
 |---|---|---|---|
-| `mongo` | mongo:7.0 | 27017 (solo localhost) | Datos en GeoJSON con índice 2dsphere |
+| `mongo` | mongo:7.0 | 27018 (solo localhost) | Datos en GeoJSON con índice 2dsphere |
 | `spark-master` / `spark-worker` | apache/spark 3.5.3 + conector MongoDB 10.4 | 8081 (UI) | Clúster Spark standalone |
 | `spark-job` | misma de Spark | 4040 mientras corre | Agregaciones (one-shot) |
 | `dask-scheduler` / `dask-worker` ×2 | python 3.11 + dask | 8787 (dashboard) | Clúster Dask |
@@ -64,7 +64,7 @@ Cuando termine:
 | Jenkins | http://localhost:8080 (usuario y clave del `.env`) |
 | Spark master | http://localhost:8081 |
 | Dashboard de Dask | http://localhost:8787 |
-| MongoDB Compass | `mongodb://localhost:27017` |
+| MongoDB Compass | `mongodb://localhost:27018` |
 
 El token de Kaggle se obtiene en Kaggle → *Settings* → *API* → *Create New Token*; el archivo `kaggle.json` trae `username` y `key`. Ese valor solo vive en el `.env` (ignorado por Git) y en la credencial `kaggle-api` de Jenkins.
 

@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     # Solo accesible desde el propio equipo (para MongoDB Compass)
     ports:
-      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27018}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
