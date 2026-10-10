@@ -104,6 +104,7 @@ function drawPoints(fc) {
 map.on("click", async (e) => {
   const { lat, lng } = e.latlng;
   if (mode() === "poly") {
+    if (vertices.length === 0) { layer.clearLayers(); polyPreview = null; }
     vertices.push([lng, lat]);
     if (polyPreview) layer.removeLayer(polyPreview);
     polyPreview = L.polygon(vertices.map(([x, y]) => [y, x]), { color: "#1d4ed8", weight: 2 }).addTo(layer);
@@ -138,8 +139,10 @@ $("runPoly").onclick = async () => {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     drawPoints(fc);
     out(`<b>$geoWithin</b>: ${fc.total_matching} registros dentro del polígono (se muestran ${fc.count}, ${fc._ms} ms)`);
-  } catch (err) { out("Error: " + err.message); }
-  vertices = [];
+    vertices = [];   // el próximo clic empieza un polígono nuevo
+  } catch (err) {
+    out("Error: " + err.message + "<br>Pulse «Limpiar» y dibuje de nuevo.");
+  }
 };
 $("clear").onclick = () => { layer.clearLayers(); vertices = []; polyPreview = null; out("Haga clic en el mapa."); };
 
