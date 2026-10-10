@@ -1,0 +1,12 @@
+{"engine": "spark", "config": "spark-1w-2c", "workers": 1, "cores": 2, "run": 1, "seconds": 10.837, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 423.9}
+{"engine": "spark", "config": "spark-1w-2c", "workers": 1, "cores": 2, "run": 2, "seconds": 1.52, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 502.4}
+{"engine": "spark", "config": "spark-1w-2c", "workers": 1, "cores": 2, "run": 3, "seconds": 0.996, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 561.3}
+{"engine": "spark", "config": "spark-2w-4c", "workers": 2, "cores": 4, "run": 1, "seconds": 15.224, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 773.8}
+{"engine": "spark", "config": "spark-2w-4c", "workers": 2, "cores": 4, "run": 2, "seconds": 1.339, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 852.1}
+{"engine": "spark", "config": "spark-2w-4c", "workers": 2, "cores": 4, "run": 3, "seconds": 1.732, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 947.8}
+{"engine": "dask", "config": "dask-2w-2c", "workers": 2, "cores": 2, "run": 1, "seconds": 2.41, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 507.9, "peak_mem_mb_max_worker": 264.6}
+{"engine": "dask", "config": "dask-2w-2c", "workers": 2, "cores": 2, "run": 2, "seconds": 0.339, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 513.2, "peak_mem_mb_max_worker": 266.5}
+{"engine": "dask", "config": "dask-2w-2c", "workers": 2, "cores": 2, "run": 3, "seconds": 0.337, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 513.6, "peak_mem_mb_max_worker": 266.8}
+{"engine": "dask", "config": "dask-4w-4c", "workers": 4, "cores": 4, "run": 1, "seconds": 1.202, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 672.0, "peak_mem_mb_max_worker": 259.5}
+{"engine": "dask", "config": "dask-4w-4c", "workers": 4, "cores": 4, "run": 2, "seconds": 0.372, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 673.5, "peak_mem_mb_max_worker": 260.6}
+{"engine": "dask", "config": "dask-4w-4c", "workers": 4, "cores": 4, "run": 3, "seconds": 0.37, "cells": 2569, "rows": 1419554, "peak_mem_mb_total": 674.8, "peak_mem_mb_max_worker": 261.4}

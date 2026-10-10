@@ -16,17 +16,19 @@ OUT="benchmark/results.jsonl"
 : > "$OUT"
 
 echo "== Spark =="
+docker compose stop dask-worker
 for N in 1 2; do
   docker compose up -d --scale spark-worker="$N" spark-master spark-worker
-  docker compose run --rm --no-deps spark-job bash /opt/jobs/submit.sh /opt/jobs/benchmark_grid.py \
+  docker compose run --rm -T --no-deps spark-job bash /opt/jobs/submit.sh /opt/jobs/benchmark_grid.py \
       --runs "$RUNS" --grid "$GRID" --expect-workers "$N" --label "spark-${N}w-$((N*2))c" \
     | tee /dev/stderr | grep '^BENCH ' | sed 's/^BENCH //' >> "$OUT"
 done
 
 echo "== Dask =="
+docker compose up -d --scale spark-worker=0 spark-worker
 for N in 2 4; do
   DASK_WORKER_THREADS=1 docker compose up -d --scale dask-worker="$N" dask-scheduler dask-worker
-  docker compose run --rm --no-deps ingest python -u benchmark_grid.py \
+  docker compose run --rm -T --no-deps ingest python -u benchmark_grid.py \
       --workers "$N" --runs "$RUNS" --grid "$GRID" --label "dask-${N}w-${N}c" \
     | tee /dev/stderr | grep '^BENCH ' | sed 's/^BENCH //' >> "$OUT"
 done
