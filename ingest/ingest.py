@@ -100,11 +100,35 @@ def find_csv(raw_dir: str, wanted: str) -> str | None:
     return csvs[0] if csvs else None
 
 
+def extract_archives(raw_dir: str) -> None:
+    """Descomprime cualquier ZIP del directorio, aunque tenga extensión .csv.
+
+    Kaggle entrega los archivos grandes comprimidos y, según la versión de la CLI,
+    los guarda con el nombre original (p. ej. "datos.csv" siendo en realidad un ZIP).
+    Se detecta por contenido (firma PK), no por la extensión.
+    """
+    for path in glob.glob(os.path.join(raw_dir, "*")):
+        if not os.path.isfile(path) or not zipfile.is_zipfile(path):
+            continue
+        log(f"Descomprimiendo {os.path.basename(path)} ({os.path.getsize(path) / 1e6:.0f} MB comprimido)")
+        tmp = os.path.join(raw_dir, "_unzip")
+        shutil.rmtree(tmp, ignore_errors=True)
+        with zipfile.ZipFile(path) as z:
+            z.extractall(tmp)
+        os.remove(path)
+        for f in glob.glob(os.path.join(tmp, "**", "*"), recursive=True):
+            if os.path.isfile(f):
+                shutil.move(f, os.path.join(raw_dir, os.path.basename(f)))
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def download() -> str:
     os.makedirs(CFG["raw_dir"], exist_ok=True)
+    extract_archives(CFG["raw_dir"])
     existing = find_csv(CFG["raw_dir"], CFG["file"])
     if existing and not CFG["force"]:
-        log(f"CSV ya descargado: {existing} (FORCE_INGEST=true para volver a bajarlo)")
+        log(f"CSV ya descargado: {existing} ({os.path.getsize(existing) / 1e6:.0f} MB; "
+            "FORCE_INGEST=true para volver a bajarlo)")
         return existing
 
     if not (os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")):
@@ -121,12 +145,7 @@ def download() -> str:
     t0 = time.time()
     subprocess.run(cmd, check=True)
 
-    for zf in glob.glob(os.path.join(CFG["raw_dir"], "*.zip")):
-        log(f"Descomprimiendo {os.path.basename(zf)}")
-        with zipfile.ZipFile(zf) as z:
-            z.extractall(CFG["raw_dir"])
-        os.remove(zf)
-
+    extract_archives(CFG["raw_dir"])
     csv = find_csv(CFG["raw_dir"], CFG["file"])
     if not csv:
         sys.exit("ERROR: la descarga terminó pero no se encontró ningún CSV")
