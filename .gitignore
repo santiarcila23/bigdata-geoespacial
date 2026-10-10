@@ -1,0 +1,11 @@
+.env
+kaggle.json
+*.pyc
+__pycache__/
+.pytest_cache/
+reports/
+data/
+*.zip
+.venv/
+.idea/
+.vscode/

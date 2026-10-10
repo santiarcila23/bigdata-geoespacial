@@ -1,0 +1,59 @@
+# Configuración de Jenkins como código. Los ${...} se leen de variables de entorno
+# del contenedor (archivo .env del equipo): ningún secreto queda en el repositorio.
+jenkins:
+  systemMessage: "Big Data geoespacial - CI/CD"
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+security:
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8080/}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "kaggle-api"
+              description: "Token de la API de Kaggle (usuario + key)"
+              username: "${KAGGLE_USERNAME:-sin-configurar}"
+              password: "${KAGGLE_KEY:-sin-configurar}"
+
+jobs:
+  - script: >
+      pipelineJob('geo-bigdata') {
+        description('Pipeline del sistema geoespacial: build, pruebas y despliegue')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('${GIT_REPO_URL}') }
+                branch('*/${GIT_BRANCH:-main}')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+        properties {
+          pipelineTriggers {
+            triggers {
+              githubPush()
+              pollSCM { scmpoll_spec('H/2 * * * *') }
+            }
+          }
+        }
+      }

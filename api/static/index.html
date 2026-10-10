@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa geoespacial</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f6f5f2; --panel:#ffffff; --ink:#1d2329; --muted:#6b7480; --line:#e2e0da; --accent:#c2410c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg);
+         display:grid; grid-template-columns:340px 1fr; height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:18px; overflow:auto; }
+  h1 { font-size:17px; margin:0 0 2px; } .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 12px; padding:10px 12px; }
+  legend { font-weight:600; padding:0 4px; }
+  label { display:block; margin:6px 0 2px; color:var(--muted); font-size:12px; }
+  input, select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  button { margin-top:8px; padding:7px 10px; border:1px solid var(--ink); background:var(--ink); color:#fff; border-radius:6px; cursor:pointer; font:inherit; }
+  button.ghost { background:transparent; color:var(--ink); }
+  .modes label { display:flex; gap:6px; align-items:center; color:var(--ink); font-size:13px; }
+  .modes input { width:auto; }
+  #out { font-size:12px; white-space:pre-wrap; background:#faf9f7; border:1px solid var(--line); border-radius:6px; padding:8px; max-height:260px; overflow:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; } td, th { padding:3px 4px; border-bottom:1px solid var(--line); text-align:left; }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  #map { height:100vh; }
+  @media (max-width: 760px) { body { grid-template-columns:1fr; grid-template-rows:auto 60vh; height:auto; } #map { height:60vh; } }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Consultas geoespaciales</h1>
+  <div class="sub" id="meta">cargando…</div>
+
+  <fieldset class="modes">
+    <legend>Modo de clic en el mapa</legend>
+    <label><input type="radio" name="mode" value="near" checked> Radio ($near)</label>
+    <label><input type="radio" name="mode" value="summary"> Resumen ($geoNear)</label>
+    <label><input type="radio" name="mode" value="poly"> Dibujar polígono ($geoWithin)</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Parámetros</legend>
+    <div class="row">
+      <div><label>Radio (m)</label><input id="radius" type="number" value="800" min="1" max="50000"></div>
+      <div><label>Límite</label><input id="limit" type="number" value="300" min="1" max="2000"></div>
+    </div>
+    <label>Categoría (opcional)</label><input id="category" placeholder="THEFT, BATTERY…">
+    <div class="row">
+      <div><label>Desde</label><input id="from" type="date"></div>
+      <div><label>Hasta</label><input id="to" type="date"></div>
+    </div>
+    <div class="row">
+      <button id="runPoly" class="ghost">Consultar polígono</button>
+      <button id="clear" class="ghost">Limpiar</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Resultados de Spark</legend>
+    <div class="row">
+      <button id="grid">Grilla</button>
+      <button id="hot" class="ghost">Hotspots</button>
+    </div>
+  </fieldset>
+
+  <div id="out">Haga clic en el mapa.</div>
+</aside>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map("map").setView([41.8781, -87.6298], 12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+const layer = L.layerGroup().addTo(map);
+let vertices = [], polyPreview = null;
+
+const mode = () => document.querySelector("input[name=mode]:checked").value;
+const out = (html) => { $("out").innerHTML = html; };
+function filters() {
+  const p = new URLSearchParams({ limit: $("limit").value });
+  for (const k of ["category", "from", "to"]) if ($(k).value) p.set(k, $(k).value);
+  return p;
+}
+async function call(url, opts) {
+  const t0 = performance.now();
+  const r = await fetch(url, opts);
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  body._ms = Math.round(performance.now() - t0);
+  return body;
+}
+function drawPoints(fc) {
+  L.geoJSON(fc, {
+    pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 4, weight: 1, color: "#7c2d12", fillColor: "#ea580c", fillOpacity: .8 }),
+    onEachFeature: (f, l) => { const p = f.properties;
+      l.bindPopup(`<b>${p.category ?? ""}</b><br>${p.description ?? ""}<br>${p.date ?? ""}<br>${p.location_description ?? ""}`); }
+  }).addTo(layer);
+}
+
+map.on("click", async (e) => {
+  const { lat, lng } = e.latlng;
+  if (mode() === "poly") {
+    vertices.push([lng, lat]);
+    if (polyPreview) layer.removeLayer(polyPreview);
+    polyPreview = L.polygon(vertices.map(([x, y]) => [y, x]), { color: "#1d4ed8", weight: 2 }).addTo(layer);
+    out(`Vértices: ${vertices.length}. Pulse «Consultar polígono» cuando termine.`);
+    return;
+  }
+  layer.clearLayers(); vertices = []; polyPreview = null;
+  const radius = +$("radius").value;
+  L.circle([lat, lng], { radius, color: "#1d4ed8", weight: 1, fillOpacity: .05 }).addTo(layer);
+  const p = filters(); p.set("lat", lat.toFixed(6)); p.set("lon", lng.toFixed(6)); p.set("radius", radius);
+  try {
+    if (mode() === "near") {
+      const fc = await call(`/api/crimes/near?${p}`);
+      drawPoints(fc);
+      out(`<b>$near</b>: ${fc.count} registros a ≤ ${radius} m (${fc._ms} ms)`);
+    } else {
+      const s = await call(`/api/crimes/summary?${p}`);
+      out(`<b>$geoNear</b>: ${s.total} registros a ≤ ${radius} m (${s._ms} ms)<table>
+        <tr><th>Categoría</th><th class="n">N</th><th class="n">Dist. prom (m)</th></tr>
+        ${s.groups.map(g => `<tr><td>${g.group}</td><td class="n">${g.count}</td><td class="n">${g.avg_distance_m}</td></tr>`).join("")}</table>`);
+    }
+  } catch (err) { out("Error: " + err.message); }
+});
+
+$("runPoly").onclick = async () => {
+  if (vertices.length < 3) return out("Dibuje al menos 3 vértices en modo polígono.");
+  const ring = [...vertices, vertices[0]];
+  const body = { geometry: { type: "Polygon", coordinates: [ring] }, limit: +$("limit").value };
+  for (const k of ["category", "from", "to"]) if ($(k).value) body[k] = $(k).value;
+  try {
+    const fc = await call(`/api/crimes/within?count=true`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    drawPoints(fc);
+    out(`<b>$geoWithin</b>: ${fc.total_matching} registros dentro del polígono (se muestran ${fc.count}, ${fc._ms} ms)`);
+  } catch (err) { out("Error: " + err.message); }
+  vertices = [];
+};
+$("clear").onclick = () => { layer.clearLayers(); vertices = []; polyPreview = null; out("Haga clic en el mapa."); };
+
+function color(t) { // t en [0,1] -> amarillo a rojo oscuro
+  const stops = [[255,237,160],[254,178,76],[240,59,32],[128,0,38]];
+  const i = Math.min(stops.length - 2, Math.floor(t * (stops.length - 1)));
+  const f = t * (stops.length - 1) - i, a = stops[i], b = stops[i + 1];
+  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`;
+}
+$("grid").onclick = async () => {
+  layer.clearLayers();
+  try {
+    const fc = await call(`/api/stats/grid?limit=5000`);
+    const max = Math.max(...fc.features.map(f => f.properties.count), 1);
+    L.geoJSON(fc, {
+      style: f => ({ weight: 0, fillOpacity: .65, fillColor: color(Math.sqrt(f.properties.count / max)) }),
+      onEachFeature: (f, l) => l.bindPopup(`Celda ${f.properties.id}<br>Registros: <b>${f.properties.count}</b><br>
+        Densidad: ${f.properties.density_km2}/km²<br>Más frecuente: ${f.properties.top_category}`)
+    }).addTo(layer);
+    out(`Grilla de Spark: ${fc.count} celdas (${fc._ms} ms). Color = conteo.`);
+  } catch (err) { out("Error: " + err.message); }
+};
+$("hot").onclick = async () => {
+  layer.clearLayers();
+  try {
+    const fc = await call(`/api/stats/hotspots?limit=50`);
+    L.geoJSON(fc, { pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 6 + 10 * (1 - f.properties.rank / 50),
+        color: "#7f1d1d", fillColor: "#dc2626", fillOpacity: .7, weight: 1 }),
+      onEachFeature: (f, l) => l.bindPopup(`#${f.properties.rank} · ${f.properties.count} registros<br>z = ${f.properties.z_score}`) }).addTo(layer);
+    out(`Top ${fc.count} zonas de alta concentración (≥ percentil 99).`);
+  } catch (err) { out("Error: " + err.message); }
+};
+
+call("/api/meta").then(m => {
+  map.setView([m.center.lat, m.center.lon], 12);
+  $("meta").textContent = `${m.dataset} · ${m.documents.toLocaleString("es-CO")} registros · versión ${m.version}`;
+}).catch(() => { $("meta").textContent = "API sin conexión"; });
+</script>
+</body>
+</html>

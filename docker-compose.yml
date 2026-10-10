@@ -1,0 +1,191 @@
+# Sistema de procesamiento y consulta de datos geoespaciales
+# Levantar todo:   docker compose up -d --build
+# Nombre de proyecto fijo para que Jenkins (que también usa docker compose)
+# administre los mismos contenedores y volúmenes.
+name: geo
+
+x-spark: &spark
+  build:
+    context: ./spark
+  image: geo-spark:latest
+  volumes:
+    - data:/data
+  environment: &spark-env
+    MONGO_URI: mongodb://mongo:27017
+    MONGO_DB: ${MONGO_DB:-geo}
+    GRID_SIZE: ${GRID_SIZE:-0.005}
+
+x-dask: &dask
+  build:
+    context: ./ingest
+  image: geo-ingest:latest
+  volumes:
+    - data:/data
+
+x-api-env: &api-env
+  MONGO_URI: mongodb://mongo:27017
+  MONGO_DB: ${MONGO_DB:-geo}
+  MAP_CENTER_LAT: ${MAP_CENTER_LAT:-41.8781}
+  MAP_CENTER_LON: ${MAP_CENTER_LON:--87.6298}
+  DATASET_NAME: ${KAGGLE_DATASET:-currie32/crimes-in-chicago}
+
+services:
+  # ---------------------------------------------------------------- MongoDB
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    # Solo accesible desde el propio equipo (para MongoDB Compass)
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ---------------------------------------------------------------- Spark
+  spark-master:
+    <<: *spark
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master",
+              "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    ports:
+      - "8081:8080"   # UI del master de Spark (8080 lo usa Jenkins)
+
+  spark-worker:
+    <<: *spark
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker",
+              "spark://spark-master:7077",
+              "--cores", "${SPARK_WORKER_CORES:-2}",
+              "--memory", "${SPARK_WORKER_MEMORY:-1g}"]
+    depends_on:
+      - spark-master
+    deploy:
+      replicas: 1     # se puede escalar: docker compose up -d --scale spark-worker=2
+
+  # Trabajo de Spark (one-shot): lee de MongoDB y escribe colecciones agregadas
+  spark-job:
+    <<: *spark
+    command: ["bash", "/opt/jobs/submit.sh", "/opt/jobs/aggregations.py"]
+    ports:
+      - "4040:4040"   # UI del driver mientras corre
+    restart: "no"
+    depends_on:
+      ingest:
+        condition: service_completed_successfully
+      spark-worker:
+        condition: service_started
+
+  # ---------------------------------------------------------------- Dask
+  dask-scheduler:
+    <<: *dask
+    restart: unless-stopped
+    command: ["dask", "scheduler", "--host", "0.0.0.0", "--dashboard-address", ":8787"]
+    ports:
+      - "8787:8787"   # dashboard de Dask
+
+  dask-worker:
+    <<: *dask
+    restart: unless-stopped
+    command: ["sh", "-c",
+              "dask worker tcp://dask-scheduler:8786 --nworkers 1 --nthreads $${DASK_WORKER_THREADS} --memory-limit $${DASK_WORKER_MEMORY}"]
+    environment:
+      DASK_WORKER_THREADS: ${DASK_WORKER_THREADS:-2}
+      DASK_WORKER_MEMORY: ${DASK_WORKER_MEMORY:-1.5GiB}
+    depends_on:
+      - dask-scheduler
+    deploy:
+      replicas: 2     # mínimo exigido: dos workers
+
+  # Ingesta (one-shot): Kaggle -> limpieza con Dask -> MongoDB (GeoJSON + 2dsphere)
+  ingest:
+    <<: *dask
+    command: ["python", "-u", "ingest.py"]
+    restart: "no"
+    environment:
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+      KAGGLE_DATASET: ${KAGGLE_DATASET:-currie32/crimes-in-chicago}
+      KAGGLE_FILE: ${KAGGLE_FILE:-Chicago_Crimes_2012_to_2017.csv}
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: ${MONGO_DB:-geo}
+      DASK_SCHEDULER: tcp://dask-scheduler:8786
+      FORCE_INGEST: ${FORCE_INGEST:-false}
+      SAMPLE_ROWS: ${SAMPLE_ROWS:-0}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      dask-scheduler:
+        condition: service_started
+      dask-worker:
+        condition: service_started
+
+  # ---------------------------------------------------------------- API
+  api:
+    build:
+      context: ./api
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: geo-api:latest
+    restart: unless-stopped
+    environment: *api-env
+    ports:
+      - "5000:5000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck: &api-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # Instancia candidata que usa Jenkins para probar antes de desplegar
+  api-staging:
+    build:
+      context: ./api
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: geo-api:candidate
+    profiles: ["ci"]
+    environment: *api-env
+    ports:
+      - "5001:5000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck: *api-health
+
+  # ---------------------------------------------------------------- Jenkins
+  jenkins:
+    build:
+      context: ./jenkins
+    image: geo-jenkins:latest
+    restart: unless-stopped
+    user: root   # necesario para usar el socket de Docker del host
+    ports:
+      - "8080:8080"
+    environment:
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?Defina JENKINS_ADMIN_PASSWORD en el archivo .env}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+      GIT_REPO_URL: ${GIT_REPO_URL:-https://github.com/USUARIO/REPO.git}
+      GIT_BRANCH: ${GIT_BRANCH:-main}
+      JENKINS_URL: ${JENKINS_URL:-http://localhost:8080/}
+      # Jenkins invoca "docker compose" dentro de su workspace: estas variables
+      # deben existir allí también para que el archivo se interprete igual.
+      MONGO_DB: ${MONGO_DB:-geo}
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  mongo_data:
+  data:
+  jenkins_home:
